@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>الساعة ومواقيت الصلاة</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;800&display=swap">
+<style>
+:root{color-scheme:dark;--bg:#10252f;--panel:#173441;--tx:#f1ede2;--mu:#8fa9b3;--ac:#f0b84a;--ink:#10252f;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%}
+body{margin:0;height:100%;background:var(--bg);color:var(--tx);font-family:'Tajawal','Segoe UI',Tahoma,Arial,sans-serif;display:flex;flex-direction:column}
+main{flex:1;display:grid;grid-template-columns:1.15fr 1fr;gap:4vw;align-items:center;padding:4vh 5vw 0}
+.time{font-size:clamp(4.5rem,17vw,16rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+#s{font-size:.3em;font-weight:500;color:var(--mu);margin-inline-start:.15em}
+.dates{margin-top:2vh;font-size:clamp(1.2rem,2.6vw,2.6rem);line-height:1.5}
+#hij{color:var(--mu)}
+.next{margin-top:4vh;padding:2vh 2.2vw;background:var(--panel);border-radius:18px;display:flex;justify-content:space-between;align-items:center;font-size:clamp(1.2rem,2.6vw,2.6rem)}
+#cd{font-weight:800;color:var(--ac);font-variant-numeric:tabular-nums}
+.row{display:flex;justify-content:space-between;align-items:center;padding:1.5vh 2vw;border-bottom:1px solid rgba(255,255,255,.08);font-size:clamp(1.4rem,3.4vw,3.3rem)}
+.row b{font-weight:800;font-variant-numeric:tabular-nums}
+.row.minor{font-size:.7em;color:var(--mu)}
+.row.on{background:var(--ac);color:var(--ink);border-radius:14px;border-bottom-color:transparent}
+footer{padding:1.5vh 5vw 3vh;color:var(--mu);font-size:1rem;display:flex;gap:.8rem;align-items:center}
+select{background:var(--panel);color:var(--tx);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:.4rem .7rem;font:inherit}
+select:focus-visible{outline:3px solid var(--ac)}
+.wx{margin-top:3vh;display:flex;align-items:center;gap:2vw;font-size:clamp(1.1rem,2.3vw,2.3rem)}
+.wx[hidden]{display:none}
+.wx b{font-size:2.4em;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+#wr{color:var(--mu)}
+@media (max-width:900px){main{grid-template-columns:1fr;gap:3vh}}
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <div class="time" dir="ltr"><span id="hm">--:--</span><span id="s">00</span></div>
+    <div class="dates"><div id="greg"></div><div id="hij"></div></div>
+    <div class="next"><span id="nl">الصلاة القادمة</span><span id="cd" dir="ltr">--:--:--</span></div>
+    <div class="wx" id="wx" hidden><b id="wt" dir="ltr"></b><div><div id="wc"></div><div id="wr"></div></div></div>
+  </section>
+  <section id="list"></section>
+</main>
+<footer><label for="city">المدينة</label><select id="city"></select></footer>
+<script>
+const TZ='Europe/Berlin';
+const CITIES={'Holzminden':[51.827,9.447],'Berlin':[52.52,13.405],'Hamburg':[53.55,9.99],'München':[48.137,11.575],'Köln':[50.938,6.96],'Frankfurt':[50.11,8.68],'Stuttgart':[48.78,9.18],'Düsseldorf':[51.23,6.78],'Dortmund':[51.51,7.47],'Essen':[51.46,7.01],'Leipzig':[51.34,12.37],'Bremen':[53.08,8.8],'Dresden':[51.05,13.74],'Hannover':[52.37,9.73],'Nürnberg':[49.45,11.08],'Duisburg':[51.43,6.76],'Bochum':[51.48,7.22],'Wuppertal':[51.26,7.15],'Bielefeld':[52.02,8.53],'Bonn':[50.73,7.1],'Mannheim':[49.49,8.47],'Karlsruhe':[49.01,8.4],'Münster':[51.96,7.63],'Wiesbaden':[50.08,8.24],'Mainz':[50.0,8.27],'Kiel':[54.32,10.14],'Saarbrücken':[49.24,6.99],'Freiburg':[48.0,7.84],'Augsburg':[48.37,10.9],'Kassel':[51.31,9.48],'Rostock':[54.09,12.1],'Erfurt':[50.98,11.03],'Magdeburg':[52.12,11.63],'Lübeck':[53.87,10.69],'Osnabrück':[52.28,8.05]};
+const NAMES={fajr:'الفجر',sunrise:'الشروق',dhuhr:'الظهر',asr:'العصر',maghrib:'المغرب',isha:'العشاء'};
+const ORDER=['fajr','sunrise','dhuhr','asr','maghrib','isha'];
+const PRAYERS=['fajr','dhuhr','asr','maghrib','isha'];
+
+const R=Math.PI/180,sin=a=>Math.sin(a*R),cos=a=>Math.cos(a*R),arcsin=x=>Math.asin(x)/R,arccos=x=>Math.acos(x)/R,arctan2=(y,x)=>Math.atan2(y,x)/R,arccot=x=>Math.atan(1/x)/R;
+const fix=(a,b)=>{a=a-b*Math.floor(a/b);return a<0?a+b:a};
+function julian(y,m,d){if(m<=2){y-=1;m+=12}const A=Math.floor(y/100),B=2-A+Math.floor(A/4);return Math.floor(365.25*(y+4716))+Math.floor(30.6001*(m+1))+d+B-1524.5}
+
+// Muslim World League: Fajr 18°, Isha 17°, standard Asr. Night-fraction rule where twilight is too short.
+function calc(y,m,d,lat,lng,tz){
+  const jd=julian(y,m,d)-lng/360;
+  const sp=t=>{const D=jd+t-2451545,g=fix(357.529+0.98560028*D,360),q=fix(280.459+0.98564736*D,360),L=fix(q+1.915*sin(g)+0.02*sin(2*g),360),e=23.439-0.00000036*D,RA=fix(arctan2(cos(e)*sin(L),cos(L))/15,24);return{decl:arcsin(sin(e)*sin(L)),eqt:q/15-RA}};
+  const mid=t=>fix(12-sp(t).eqt,24);
+  const ang=(a,t,ccw)=>{const dc=sp(t).decl,c=(-sin(a)-sin(dc)*sin(lat))/(cos(dc)*cos(lat));if(Math.abs(c)>1)return NaN;const h=arccos(c)/15;return mid(t)+(ccw?-h:h)};
+  const asr=t=>{const dc=sp(t).decl;return ang(-arccot(1+Math.tan(Math.abs(lat-dc)*R)),t,false)};
+  const r={fajr:ang(18,5/24,true),sunrise:ang(.833,6/24,true),dhuhr:mid(.5),asr:asr(13/24),maghrib:ang(.833,18/24,false),isha:ang(17,18/24,false)};
+  const adj=tz-lng/15;for(const k in r)r[k]+=adj;
+  const night=24+r.sunrise-r.maghrib,fp=18/60*night,ip=17/60*night;
+  if(isNaN(r.fajr)||fix(r.sunrise-r.fajr,24)>fp)r.fajr=r.sunrise-fp;
+  if(isNaN(r.isha)||fix(r.isha-r.maghrib,24)>ip)r.isha=r.maghrib+ip;
+  return r;
+}
+
+const dtf=new Intl.DateTimeFormat('en-GB',{timeZone:TZ,hourCycle:'h23',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric'});
+function parts(d){const o={};dtf.formatToParts(d).forEach(p=>{if(p.type!=='literal')o[p.type]=+p.value});return o}
+function tzOff(d,p){return(Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute,p.second)-Math.floor(d.getTime()/1000)*1000)/3600000}
+const two=n=>String(n).padStart(2,'0');
+function fmt(h){const t=Math.round(fix(h,24)*60)%1440;return two(Math.floor(t/60))+':'+two(t%60)}
+
+let city='Holzminden';
+try{const c=localStorage.getItem('city');if(c&&CITIES[c])city=c}catch(e){}
+const sel=document.getElementById('city');
+Object.keys(CITIES).forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o)});
+sel.value=city;
+sel.onchange=()=>{city=sel.value;try{localStorage.setItem('city',city)}catch(e){}key='';tick();weather()};
+
+const gregF=new Intl.DateTimeFormat('ar-u-nu-latn',{timeZone:TZ,weekday:'long',day:'numeric',month:'long',year:'numeric'});
+let hijF;try{hijF=new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura-nu-latn',{timeZone:TZ,day:'numeric',month:'long',year:'numeric'})}catch(e){}
+const $=id=>document.getElementById(id);
+let key='',today,tomorrow;
+
+function build(now,p){
+  const tz=tzOff(now,p),[lat,lng]=CITIES[city];
+  today=calc(p.year,p.month,p.day,lat,lng,tz);
+  const n=new Date(Date.UTC(p.year,p.month-1,p.day+1));
+  tomorrow=calc(n.getUTCFullYear(),n.getUTCMonth()+1,n.getUTCDate(),lat,lng,tz);
+  $('list').innerHTML=ORDER.map(k=>`<div class="row${k==='sunrise'?' minor':''}" id="r-${k}"><span>${NAMES[k]}</span><b dir="ltr">${fmt(today[k])}</b></div>`).join('');
+}
+
+function tick(){
+  const now=new Date(),p=parts(now),k=p.year+'-'+p.month+'-'+p.day+'-'+city;
+  if(k!==key){key=k;build(now,p);$('greg').textContent=gregF.format(now);$('hij').textContent=hijF?hijF.format(now):''}
+  $('hm').textContent=two(p.hour)+':'+two(p.minute);
+  $('s').textContent=two(p.second);
+  const h=p.hour+p.minute/60+p.second/3600;
+  let next=PRAYERS.find(x=>today[x]>h),rem;
+  if(next){rem=today[next]-h}else{next='fajr';rem=24-h+tomorrow.fajr}
+  ORDER.forEach(x=>$('r-'+x).classList.toggle('on',x===next));
+  const t=Math.max(0,Math.floor(rem*3600));
+  $('nl').textContent='باقي على '+NAMES[next];
+  $('cd').textContent=two(Math.floor(t/3600))+':'+two(Math.floor(t%3600/60))+':'+two(t%60);
+}
+const WMO=c=>c===0?'صافي':c<=2?'غائم جزئياً':c===3?'غائم':c<=48?'ضباب':c<=57?'رذاذ':c<=67?'مطر':c<=77?'ثلج':c<=82?'زخات مطر':c<=86?'زخات ثلج':'عاصفة رعدية';
+// Weather comes from Open-Meteo. It needs internet access to that site, so it shows when the file is hosted on your own site (e.g. GitHub Pages) and hides itself otherwise.
+async function weather(){
+  try{
+    const[lat,lng]=CITIES[city];
+    const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,apparent_temperature,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Europe%2FBerlin&forecast_days=1`);
+    if(!r.ok)throw 0;
+    const j=await r.json(),c=j.current,d=j.daily;
+    $('wt').textContent=Math.round(c.temperature_2m)+'°';
+    $('wc').textContent=WMO(c.weather_code)+'، الإحساس '+Math.round(c.apparent_temperature)+'°';
+    const rain=d.precipitation_probability_max[0];
+    $('wr').textContent='عظمى '+Math.round(d.temperature_2m_max[0])+'° وصغرى '+Math.round(d.temperature_2m_min[0])+'°'+(rain!=null?'، احتمال المطر '+rain+'%':'');
+    $('wx').hidden=false;
+  }catch(e){$('wx').hidden=true}
+}
+tick();setInterval(tick,1000);
+weather();setInterval(weather,900000);
+async function wake(){try{await navigator.wakeLock.request('screen')}catch(e){}}
+wake();document.addEventListener('visibilitychange',()=>{if(!document.hidden)wake()});
+</script>
+</body>
+</html>
